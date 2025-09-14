@@ -11,20 +11,20 @@ services:
     networks:
       - messaging_network
 
-  backend:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
-    environment:
-      - CENTRIFUGO_URL=http://centrifugo:8000
-      - CENTRIFUGO_API_KEY=api_key
-      - PORT=8080
-    depends_on:
-      - centrifugo
-    networks:
-      - messaging_network
+  # backend:
+  #   build:
+  #     context: ../backend
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - CENTRIFUGO_URL=http://centrifugo:8000
+  #     - CENTRIFUGO_API_KEY=api_key
+  #     - PORT=8080
+  #   depends_on:
+  #     - centrifugo
+  #   networks:
+  #     - messaging_network
 
 networks:
   messaging_network:
