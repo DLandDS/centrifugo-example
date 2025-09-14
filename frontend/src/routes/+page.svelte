@@ -17,6 +17,7 @@
 	let newMessage = '';
 	let username = '';
 	let subscription: any = null;
+	let subscriptions: { [key: string]: any } = {};
 	let availableTopics: string[] = [];
 
 	const API_BASE = 'http://localhost:8080';
@@ -59,9 +60,12 @@
 	}
 
 	onDestroy(() => {
-		if (subscription) {
-			subscription.unsubscribe();
-		}
+		// Unsubscribe from all subscriptions
+		Object.values(subscriptions).forEach(sub => {
+			if (sub) {
+				sub.unsubscribe();
+			}
+		});
 		if (centrifuge) {
 			centrifuge.disconnect();
 		}
@@ -139,6 +143,7 @@
 	}
 
 	function joinTopic(topic: string) {
+		// Unsubscribe from current subscription
 		if (subscription) {
 			subscription.unsubscribe();
 		}
@@ -148,47 +153,55 @@
 
 		if (centrifuge && connected) {
 			const channelName = `topic:${topic}`;
-			subscription = centrifuge.newSubscription(channelName);
+			
+			// Reuse existing subscription if available
+			if (subscriptions[channelName]) {
+				subscription = subscriptions[channelName];
+			} else {
+				// Create new subscription only if it doesn't exist
+				subscription = centrifuge.newSubscription(channelName);
+				subscriptions[channelName] = subscription;
 
-			subscription.on('publication', (ctx: any) => {
-				const message: Message = ctx.data;
-				messages = [...messages, message];
-				scrollToBottom();
-			});
+				subscription.on('publication', (ctx: any) => {
+					// Only add message if this is the current topic
+					if (currentTopic === topic) {
+						const message: Message = ctx.data;
+						messages = [...messages, message];
+						scrollToBottom();
+					}
+				});
 
-			subscription.on('error', (error: any) => {
-				console.error('Subscription error:', error);
-			});
+				subscription.on('error', (error: any) => {
+					console.error('Subscription error:', error);
+				});
+			}
 
+			// Subscribe to the channel
 			subscription.subscribe();
 		}
 	}
 
 	async function sendMessage() {
-		if (!newMessage.trim() || !username.trim()) return;
+		if (!newMessage.trim() || !username.trim() || !connected || !subscription) return;
 
 		try {
-			const response = await fetch(`${API_BASE}/api/messages`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
-					topic: currentTopic,
-					content: newMessage.trim(),
-					author: username.trim(),
-				}),
-			});
+			// Create message object
+			const message: Message = {
+				id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+				topic: currentTopic,
+				content: newMessage.trim(),
+				author: username.trim(),
+				timestamp: new Date().toISOString()
+			};
 
-			if (response.ok) {
-				newMessage = '';
-			} else {
-				const error = await response.json();
-				alert(`Failed to send message: ${error.error}`);
-			}
+			// Publish directly via WebSocket using Centrifuge client
+			await subscription.publish(message);
+			
+			// Clear input after successful send
+			newMessage = '';
 		} catch (error) {
-			console.error('Failed to send message:', error);
-			alert('Failed to send message. Please check if the backend is running.');
+			console.error('Failed to send message via WebSocket:', error);
+			alert('Failed to send message. Please check your connection.');
 		}
 	}
 
@@ -263,9 +276,9 @@
 				bind:value={newMessage}
 				on:keydown={handleKeyPress}
 				placeholder="Type your message here..."
-				disabled={!connected}
+				disabled={!connected || !subscription}
 			/>
-			<button on:click={sendMessage} disabled={!connected || !newMessage.trim()}>
+			<button on:click={sendMessage} disabled={!connected || !newMessage.trim() || !subscription}>
 				Send
 			</button>
 		</div>
