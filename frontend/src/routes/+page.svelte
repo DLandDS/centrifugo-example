@@ -184,46 +184,44 @@
 	async function sendMessage() {
 		if (!newMessage.trim() || !username.trim() || !connected) return;
 
-		try {
-			// Send message via backend API which handles cross-channel aggregation
-			const response = await fetch(`${API_BASE}/api/messages`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
+		// try {
+		// 	// Send message via backend API which handles cross-channel aggregation
+		// 	const response = await fetch(`${API_BASE}/api/messages`, {
+		// 		method: 'POST',
+		// 		headers: {
+		// 			'Content-Type': 'application/json',
+		// 		},
+		// 		body: JSON.stringify({
+		// 			topic: currentTopic,
+		// 			content: newMessage.trim(),
+		// 			author: username.trim()
+		// 		})
+		// 	});
+
+		// 	if (!response.ok) {
+		// 		throw new Error('Failed to send message via API');
+		// 	}
+			
+		// 	// Clear input after successful send
+		// 	newMessage = '';
+		// } catch (error) {
+		// 	console.error('Failed to send message via API:', error);
+		// 	// Fallback to direct WebSocket publication if API fails
+			try {
+				const message: Message = {
+					id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
 					topic: currentTopic,
 					content: newMessage.trim(),
-					author: username.trim()
-				})
-			});
-
-			if (!response.ok) {
-				throw new Error('Failed to send message via API');
-			}
-			
-			// Clear input after successful send
-			newMessage = '';
-		} catch (error) {
-			console.error('Failed to send message via API:', error);
-			// Fallback to direct WebSocket publication if API fails
-			try {
-				if (subscription) {
-					const message: Message = {
-						id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-						topic: currentTopic,
-						content: newMessage.trim(),
-						author: username.trim(),
-						timestamp: new Date().toISOString()
-					};
-					await subscription.publish(message);
-					newMessage = '';
-				}
+					author: username.trim(),
+					timestamp: new Date().toISOString()
+				};
+				await subscription.publish(message);
+				newMessage = '';
 			} catch (wsError) {
 				console.error('Failed to send message via WebSocket fallback:', wsError);
 				alert('Failed to send message. Please check your connection.');
 			}
-		}
+		// }
 	}
 
 	function scrollToBottom() {
