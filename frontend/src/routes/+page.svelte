@@ -17,7 +17,6 @@
 	let newMessage = '';
 	let username = '';
 	let subscription: any = null;
-	let subscriptions: { [key: string]: any } = {};
 	let availableTopics: string[] = [];
 
 	const API_BASE = 'http://localhost:8080';
@@ -60,12 +59,10 @@
 	}
 
 	onDestroy(() => {
-		// Unsubscribe from all subscriptions
-		Object.values(subscriptions).forEach(sub => {
-			if (sub) {
-				sub.unsubscribe();
-			}
-		});
+		// Unsubscribe from current subscription
+		if (subscription) {
+			subscription.unsubscribe();
+		}
 		if (centrifuge) {
 			centrifuge.disconnect();
 		}
@@ -154,27 +151,21 @@
 		if (centrifuge && connected) {
 			const channelName = `topic:${topic}`;
 			
-			// Reuse existing subscription if available
-			if (subscriptions[channelName]) {
-				subscription = subscriptions[channelName];
-			} else {
-				// Create new subscription only if it doesn't exist
-				subscription = centrifuge.newSubscription(channelName);
-				subscriptions[channelName] = subscription;
+			// Always create a fresh subscription to avoid closure issues
+			subscription = centrifuge.newSubscription(channelName);
+			
+			subscription.on('publication', (ctx: any) => {
+				// Only add message if this subscription is for the current topic
+				if (currentTopic === topic) {
+					const message: Message = ctx.data;
+					messages = [...messages, message];
+					scrollToBottom();
+				}
+			});
 
-				subscription.on('publication', (ctx: any) => {
-					// Only add message if this is the current topic
-					if (currentTopic === topic) {
-						const message: Message = ctx.data;
-						messages = [...messages, message];
-						scrollToBottom();
-					}
-				});
-
-				subscription.on('error', (error: any) => {
-					console.error('Subscription error:', error);
-				});
-			}
+			subscription.on('error', (error: any) => {
+				console.error(`Subscription error for ${topic}:`, error);
+			});
 
 			// Subscribe to the channel
 			subscription.subscribe();

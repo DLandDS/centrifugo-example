@@ -163,12 +163,16 @@ func sendMessage(c *gin.Context) {
 		// Get all available topics
 		topics := []string{"all", "general", "tech", "random", "announcements"}
 		
+		log.Printf("Broadcasting message from 'all' to %d channels", len(topics))
 		// Publish to all topic channels
 		for _, topic := range topics {
 			channelName := fmt.Sprintf("topic:%s", topic)
+			log.Printf("Publishing to channel: %s", channelName)
 			if err := publishToCentrifugo(channelName, message); err != nil {
 				log.Printf("Failed to publish to '%s' topic: %v", topic, err)
 				// Continue publishing to other channels even if one fails
+			} else {
+				log.Printf("Successfully published to '%s' topic", topic)
 			}
 		}
 	} else {
