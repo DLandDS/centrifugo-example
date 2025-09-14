@@ -39,6 +39,25 @@
 		initializeCentrifugo();
 	});
 
+	// Only reconnect when username changes after initial mount
+	let previousUsername = '';
+	$: if (username && username !== previousUsername && previousUsername !== '') {
+		previousUsername = username;
+		reconnectWithNewToken();
+	} else if (previousUsername === '') {
+		previousUsername = username;
+	}
+
+	async function reconnectWithNewToken() {
+		if (centrifuge) {
+			centrifuge.disconnect();
+		}
+		// Small delay to ensure disconnection is complete
+		setTimeout(() => {
+			initializeCentrifugo();
+		}, 500);
+	}
+
 	onDestroy(() => {
 		if (subscription) {
 			subscription.unsubscribe();
@@ -49,24 +68,74 @@
 	});
 
 	function initializeCentrifugo() {
-		centrifuge = new Centrifuge(CENTRIFUGO_URL);
+		// Get JWT token first, then connect
+		getTokenAndConnect();
+	}
 
-		centrifuge.on('connected', () => {
-			connected = true;
-			console.log('Connected to Centrifugo');
-			joinTopic(currentTopic);
-		});
+	async function getTokenAndConnect() {
+		try {
+			// Get JWT token from backend
+			const response = await fetch(`${API_BASE}/api/token`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					user: username,
+				}),
+			});
 
-		centrifuge.on('disconnected', () => {
-			connected = false;
-			console.log('Disconnected from Centrifugo');
-		});
+			if (!response.ok) {
+				throw new Error('Failed to get token');
+			}
 
-		centrifuge.on('error', (error) => {
-			console.error('Centrifugo error:', error);
-		});
+			const data = await response.json();
+			const token = data.token;
 
-		centrifuge.connect();
+			// Initialize Centrifuge with token
+			centrifuge = new Centrifuge(CENTRIFUGO_URL, {
+				token: token
+			});
+
+			centrifuge.on('connected', () => {
+				connected = true;
+				console.log('Connected to Centrifugo');
+				joinTopic(currentTopic);
+			});
+
+			centrifuge.on('disconnected', () => {
+				connected = false;
+				console.log('Disconnected from Centrifugo');
+			});
+
+			centrifuge.on('error', (error) => {
+				console.error('Centrifugo error:', error);
+			});
+
+			centrifuge.connect();
+		} catch (error) {
+			console.error('Failed to get token or connect:', error);
+			// Fallback to anonymous connection if token fails
+			console.log('Falling back to anonymous connection...');
+			centrifuge = new Centrifuge(CENTRIFUGO_URL);
+
+			centrifuge.on('connected', () => {
+				connected = true;
+				console.log('Connected to Centrifugo (anonymous)');
+				joinTopic(currentTopic);
+			});
+
+			centrifuge.on('disconnected', () => {
+				connected = false;
+				console.log('Disconnected from Centrifugo');
+			});
+
+			centrifuge.on('error', (error) => {
+				console.error('Centrifugo error:', error);
+			});
+
+			centrifuge.connect();
+		}
 	}
 
 	function joinTopic(topic: string) {

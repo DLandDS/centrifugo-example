@@ -4,7 +4,13 @@
   "admin_secret": "admin_secret",
   "api_key": "api_key",
   "allowed_origins": ["http://localhost:5173", "http://localhost:3000"],
-  "allow_anonymous": true,
   "log_level": "info",
-  "health": true
+  "health": true,
+  "namespaces": [
+    {
+      "name": "topic",
+      "allow_subscribe_for_client": true,
+      "allow_publish_for_client": false
+    }
+  ]
 }

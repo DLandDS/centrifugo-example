@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type Message struct {
@@ -33,6 +34,14 @@ type SendMessageRequest struct {
 	Author  string `json:"author"`
 }
 
+type TokenRequest struct {
+	User string `json:"user"`
+}
+
+type TokenResponse struct {
+	Token string `json:"token"`
+}
+
 type CentrifugoConfig struct {
 	URL       string
 	APIKey    string
@@ -50,6 +59,48 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func generateToken(user string) (string, error) {
+	// Create the claims
+	claims := jwt.MapClaims{
+		"sub": user,                                    // Subject (user identifier)
+		"iat": time.Now().Unix(),                      // Issued at
+		"exp": time.Now().Add(24 * time.Hour).Unix(),  // Expires in 24 hours
+	}
+
+	// Create token
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	// Sign token with secret
+	tokenString, err := token.SignedString([]byte(centrifugoConfig.TokenHMACSecretKey))
+	if err != nil {
+		return "", fmt.Errorf("failed to sign token: %v", err)
+	}
+
+	return tokenString, nil
+}
+
+func getToken(c *gin.Context) {
+	var req TokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request format"})
+		return
+	}
+
+	if req.User == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "User is required"})
+		return
+	}
+
+	token, err := generateToken(req.User)
+	if err != nil {
+		log.Printf("Failed to generate token: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, TokenResponse{Token: token})
 }
 
 func publishToCentrifugo(channel string, data interface{}) error {
@@ -149,6 +200,7 @@ func main() {
 	r.GET("/health", healthCheck)
 	r.GET("/api/topics", getTopics)
 	r.POST("/api/messages", sendMessage)
+	r.POST("/api/token", getToken)
 
 	port := getEnv("PORT", "8080")
 	log.Printf("Starting server on port %s", port)
