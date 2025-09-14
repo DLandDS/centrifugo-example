@@ -158,12 +158,22 @@ func sendMessage(c *gin.Context) {
 		Timestamp: time.Now(),
 	}
 
-	// Publish to Centrifugo channel
+	// Publish to the specific topic channel
 	channelName := fmt.Sprintf("topic:%s", req.Topic)
 	if err := publishToCentrifugo(channelName, message); err != nil {
 		log.Printf("Failed to publish to Centrifugo: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send message"})
 		return
+	}
+
+	// Also publish to the "all" topic channel if the message is not already for "all"
+	// This allows the "all" topic to aggregate messages from all other topics
+	if req.Topic != "all" {
+		allChannelName := "topic:all"
+		if err := publishToCentrifugo(allChannelName, message); err != nil {
+			log.Printf("Failed to publish to 'all' topic: %v", err)
+			// Don't fail the request if publishing to "all" fails
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -174,7 +184,8 @@ func sendMessage(c *gin.Context) {
 
 func getTopics(c *gin.Context) {
 	// For demo purposes, return some example topics
-	topics := []string{"general", "tech", "random", "announcements"}
+	// "all" is a special topic that aggregates messages from all other topics
+	topics := []string{"all", "general", "tech", "random", "announcements"}
 	c.JSON(http.StatusOK, gin.H{"topics": topics})
 }
 

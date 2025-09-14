@@ -12,7 +12,7 @@
 
 	let centrifuge: Centrifuge | null = null;
 	let connected = false;
-	let currentTopic = 'general';
+	let currentTopic = 'all';
 	let messages: Message[] = [];
 	let newMessage = '';
 	let username = '';
@@ -31,7 +31,7 @@
 			availableTopics = data.topics;
 		} catch (error) {
 			console.error('Failed to load topics:', error);
-			availableTopics = ['general', 'tech', 'random'];
+			availableTopics = ['all', 'general', 'tech', 'random'];
 		}
 
 		// Set default username
@@ -182,26 +182,47 @@
 	}
 
 	async function sendMessage() {
-		if (!newMessage.trim() || !username.trim() || !connected || !subscription) return;
+		if (!newMessage.trim() || !username.trim() || !connected) return;
 
 		try {
-			// Create message object
-			const message: Message = {
-				id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-				topic: currentTopic,
-				content: newMessage.trim(),
-				author: username.trim(),
-				timestamp: new Date().toISOString()
-			};
+			// Send message via backend API which handles cross-channel aggregation
+			const response = await fetch(`${API_BASE}/api/messages`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					topic: currentTopic,
+					content: newMessage.trim(),
+					author: username.trim()
+				})
+			});
 
-			// Publish directly via WebSocket using Centrifuge client
-			await subscription.publish(message);
+			if (!response.ok) {
+				throw new Error('Failed to send message via API');
+			}
 			
 			// Clear input after successful send
 			newMessage = '';
 		} catch (error) {
-			console.error('Failed to send message via WebSocket:', error);
-			alert('Failed to send message. Please check your connection.');
+			console.error('Failed to send message via API:', error);
+			// Fallback to direct WebSocket publication if API fails
+			try {
+				if (subscription) {
+					const message: Message = {
+						id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+						topic: currentTopic,
+						content: newMessage.trim(),
+						author: username.trim(),
+						timestamp: new Date().toISOString()
+					};
+					await subscription.publish(message);
+					newMessage = '';
+				}
+			} catch (wsError) {
+				console.error('Failed to send message via WebSocket fallback:', wsError);
+				alert('Failed to send message. Please check your connection.');
+			}
 		}
 	}
 
@@ -247,6 +268,7 @@
 			<button 
 				class="topic-btn" 
 				class:active={currentTopic === topic}
+				class:all-topic={topic === 'all'}
 				on:click={() => joinTopic(topic)}
 			>
 				#{topic}
@@ -260,13 +282,20 @@
 				<div class="message" class:own-message={message.author === username}>
 					<div class="message-header">
 						<span class="author">{message.author}</span>
+						{#if currentTopic === 'all' && message.topic !== 'all'}
+							<span class="topic-indicator">#{message.topic}</span>
+						{/if}
 						<span class="time">{formatTime(message.timestamp)}</span>
 					</div>
 					<div class="message-content">{message.content}</div>
 				</div>
 			{:else}
 				<div class="no-messages">
-					No messages yet. Be the first to send a message to #{currentTopic}!
+					{#if currentTopic === 'all'}
+						No messages yet. Messages from all topics will appear here!
+					{:else}
+						No messages yet. Be the first to send a message to #{currentTopic}!
+					{/if}
 				</div>
 			{/each}
 		</div>
@@ -276,9 +305,9 @@
 				bind:value={newMessage}
 				on:keydown={handleKeyPress}
 				placeholder="Type your message here..."
-				disabled={!connected || !subscription}
+				disabled={!connected}
 			/>
-			<button on:click={sendMessage} disabled={!connected || !newMessage.trim() || !subscription}>
+			<button on:click={sendMessage} disabled={!connected || !newMessage.trim()}>
 				Send
 			</button>
 		</div>
@@ -362,6 +391,21 @@
 		color: white;
 	}
 
+	.topic-btn.all-topic {
+		border-color: #ff9800;
+		color: #ff9800;
+		font-weight: bold;
+	}
+
+	.topic-btn.all-topic:hover {
+		background: #fff3e0;
+	}
+
+	.topic-btn.all-topic.active {
+		background: #ff9800;
+		color: white;
+	}
+
 	.chat-container {
 		border: 1px solid #ddd;
 		border-radius: 8px;
@@ -404,6 +448,15 @@
 
 	.time {
 		color: #666;
+	}
+
+	.topic-indicator {
+		background: #e3f2fd;
+		color: #2196f3;
+		padding: 2px 6px;
+		border-radius: 10px;
+		font-size: 0.8em;
+		font-weight: bold;
 	}
 
 	.message-content {
