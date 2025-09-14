@@ -158,17 +158,33 @@ func sendMessage(c *gin.Context) {
 		Timestamp: time.Now(),
 	}
 
-	// Publish to the specific topic channel
-	channelName := fmt.Sprintf("topic:%s", req.Topic)
-	if err := publishToCentrifugo(channelName, message); err != nil {
-		log.Printf("Failed to publish to Centrifugo: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send message"})
-		return
-	}
+	// Special handling for "all" channel: broadcast to all channels
+	if req.Topic == "all" {
+		// Get all available topics
+		topics := []string{"all", "general", "tech", "random", "announcements"}
+		
+		log.Printf("Broadcasting message from 'all' to %d channels", len(topics))
+		// Publish to all topic channels
+		for _, topic := range topics {
+			channelName := fmt.Sprintf("topic:%s", topic)
+			log.Printf("Publishing to channel: %s", channelName)
+			if err := publishToCentrifugo(channelName, message); err != nil {
+				log.Printf("Failed to publish to '%s' topic: %v", topic, err)
+				// Continue publishing to other channels even if one fails
+			} else {
+				log.Printf("Successfully published to '%s' topic", topic)
+			}
+		}
+	} else {
+		// Normal behavior: publish to specific topic channel
+		channelName := fmt.Sprintf("topic:%s", req.Topic)
+		if err := publishToCentrifugo(channelName, message); err != nil {
+			log.Printf("Failed to publish to Centrifugo: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send message"})
+			return
+		}
 
-	// Also publish to the "all" topic channel if the message is not already for "all"
-	// This allows the "all" topic to aggregate messages from all other topics
-	if req.Topic != "all" {
+		// Also publish to the "all" topic channel to aggregate messages from all other topics
 		allChannelName := "topic:all"
 		if err := publishToCentrifugo(allChannelName, message); err != nil {
 			log.Printf("Failed to publish to 'all' topic: %v", err)
